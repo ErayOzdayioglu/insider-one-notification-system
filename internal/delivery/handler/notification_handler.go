@@ -92,11 +92,9 @@ func (h *NotificationHandler) CreateBatch(c *gin.Context) {
 		return
 	}
 
-	batchID := uuid.New()
 	entities := make([]*entity.Notification, 0, len(req.Notifications))
 	for i := range req.Notifications {
 		n := h.mapCreateRequestToEntity(&req.Notifications[i])
-		n.BatchID = &batchID
 		entities = append(entities, n)
 	}
 
@@ -113,8 +111,14 @@ func (h *NotificationHandler) CreateBatch(c *gin.Context) {
 		})
 	}
 
+	// BatchID is assigned by the service layer during CreateBatch.
+	var batchID string
+	if entities[0].BatchID != nil {
+		batchID = entities[0].BatchID.String()
+	}
+
 	c.JSON(http.StatusCreated, BatchCreateResponse{
-		BatchID:       batchID.String(),
+		BatchID:       batchID,
 		Notifications: summaries,
 		Total:         len(entities),
 	})

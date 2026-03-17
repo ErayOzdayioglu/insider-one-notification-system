@@ -463,6 +463,10 @@ func TestNotificationHandler_CreateBatch(t *testing.T) {
 			},
 			setupMock: func(m *mockNotificationService) {
 				m.createBatchFunc = func(_ context.Context, ns []*entity.Notification) error {
+					batchID := uuid.New()
+					for _, n := range ns {
+						n.BatchID = &batchID
+					}
 					return nil
 				}
 			},
