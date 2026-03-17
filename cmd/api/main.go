@@ -2,7 +2,7 @@
 // @version         1.0
 // @description     Event-driven notification system with SMS, Email, and Push channels
 // @host            localhost:8080
-// @BasePath        /api/v1
+// @BasePath        /
 
 package main
 
@@ -35,7 +35,6 @@ import (
 	"github.com/erayozdayioglu/insider-one-notification-system/internal/tracing"
 	"github.com/erayozdayioglu/insider-one-notification-system/internal/worker"
 
-	_ "github.com/erayozdayioglu/insider-one-notification-system/docs"
 )
 
 func main() {
@@ -153,8 +152,8 @@ func main() {
 	// -----------------------------------------------------------------------
 	// Create services
 	// -----------------------------------------------------------------------
-	notificationService := service.NewNotificationService(notificationRepo, producer, pubsub, logger)
 	templateService := service.NewTemplateService(templateRepo, templateEngine)
+	notificationService := service.NewNotificationService(notificationRepo, templateService, producer, pubsub, logger)
 
 	// -----------------------------------------------------------------------
 	// Create worker processor, worker pool, start pool

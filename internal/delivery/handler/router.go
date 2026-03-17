@@ -9,6 +9,7 @@ import (
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 
+	"github.com/erayozdayioglu/insider-one-notification-system/docs"
 	"github.com/erayozdayioglu/insider-one-notification-system/internal/delivery/middleware"
 )
 
@@ -20,11 +21,11 @@ type WebSocketHandler interface {
 
 // RouterDeps aggregates all dependencies needed to build the HTTP router.
 type RouterDeps struct {
-	Logger             *slog.Logger
+	Logger              *slog.Logger
 	NotificationHandler *NotificationHandler
 	TemplateHandler     *TemplateHandler
 	HealthHandler       *HealthHandler
-	WebSocketHandler    WebSocketHandler // may be nil if WS is not yet implemented
+	WebSocketHandler    WebSocketHandler
 }
 
 // NewRouter creates and configures a Gin engine with all middleware and routes.
@@ -46,12 +47,17 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 	router.GET("/ready", deps.HealthHandler.Readiness)
 
 	// ---------------------------------------------------------------------------
-	// Swagger UI
+	// Swagger UI — serve embedded swagger.json to bypass template rendering issues
 	// ---------------------------------------------------------------------------
-	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	router.GET("/docs/swagger.json", func(c *gin.Context) {
+		c.Data(http.StatusOK, "application/json", docs.SwaggerJSON)
+	})
+	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler,
+		ginSwagger.URL("/docs/swagger.json"),
+	))
 
 	// ---------------------------------------------------------------------------
-	// Metrics placeholder — wire a Prometheus handler here when available.
+	// Metrics placeholder
 	// ---------------------------------------------------------------------------
 	router.GET("/metrics", func(c *gin.Context) {
 		c.String(http.StatusOK, "# metrics endpoint placeholder\n")
