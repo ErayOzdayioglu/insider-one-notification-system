@@ -14,7 +14,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.26"
 
       - uses: golangci/golangci-lint-action@v4
         with:
@@ -61,7 +61,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.26"
 
       - name: Download dependencies
         run: go mod download
@@ -83,7 +83,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.26"
 
       - name: Build binary
         run: CGO_ENABLED=0 go build -ldflags="-w -s" -o bin/api ./cmd/api/main.go
@@ -98,7 +98,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.26"
 
       - name: Install swag
         run: go install github.com/swaggo/swag/cmd/swag@latest

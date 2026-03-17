@@ -1,7 +1,7 @@
 # =============================================================================
 # Builder stage
 # =============================================================================
-FROM golang:1.22-alpine AS builder
+FROM golang:1.26-alpine AS builder
 
 RUN apk add --no-cache git ca-certificates tzdata
 
@@ -31,6 +31,7 @@ WORKDIR /app
 
 COPY --from=builder /app/bin/api .
 COPY --from=builder /app/migrations ./migrations
+COPY --from=builder /app/docs ./docs
 
 RUN chown -R appuser:appgroup /app
 
