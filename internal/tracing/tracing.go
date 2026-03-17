@@ -26,10 +26,8 @@ func InitTracer(ctx context.Context, cfg config.TracingConfig) (shutdown func(),
 	}
 
 	// Build a resource describing this service.
-	res, err := resource.Merge(
-		resource.Default(),
-		resource.NewWithAttributes(
-			semconv.SchemaURL,
+	res, err := resource.New(ctx,
+		resource.WithAttributes(
 			semconv.ServiceName(cfg.ServiceName),
 		),
 	)
