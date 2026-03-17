@@ -1,0 +1,785 @@
+basePath: /api/v1
+definitions:
+  handler.BatchCreateRequest:
+    properties:
+      notifications:
+        items:
+          $ref: '#/definitions/handler.CreateNotificationRequest'
+        maxItems: 1000
+        minItems: 1
+        type: array
+    required:
+    - notifications
+    type: object
+  handler.BatchCreateResponse:
+    properties:
+      batch_id:
+        example: 660e8400-e29b-41d4-a716-446655440000
+        type: string
+      notifications:
+        items:
+          $ref: '#/definitions/handler.BatchNotificationSummary'
+        type: array
+      total:
+        example: 5
+        type: integer
+    type: object
+  handler.BatchNotificationSummary:
+    properties:
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      status:
+        example: pending
+        type: string
+    type: object
+  handler.CancelNotificationResponse:
+    properties:
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      status:
+        example: cancelled
+        type: string
+    type: object
+  handler.CreateNotificationRequest:
+    properties:
+      channel:
+        enum:
+        - sms
+        - email
+        - push
+        example: email
+        type: string
+      content:
+        example: Hello {{.Name}}, welcome aboard!
+        type: string
+      idempotency_key:
+        example: notif-abc-123
+        type: string
+      priority:
+        enum:
+        - high
+        - normal
+        - low
+        example: normal
+        type: string
+      recipient:
+        example: user@example.com
+        type: string
+      scheduled_at:
+        example: "2026-03-18T10:00:00Z"
+        type: string
+      subject:
+        example: Welcome!
+        type: string
+      template_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      template_vars:
+        additionalProperties:
+          type: string
+        type: object
+    required:
+    - channel
+    - idempotency_key
+    - priority
+    - recipient
+    type: object
+  handler.CreateNotificationResponse:
+    properties:
+      created_at:
+        example: "2026-03-17T12:00:00Z"
+        type: string
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      status:
+        example: pending
+        type: string
+    type: object
+  handler.CreateTemplateRequest:
+    properties:
+      channel:
+        enum:
+        - sms
+        - email
+        - push
+        example: email
+        type: string
+      content:
+        example: Hello {{.Name}}, welcome to {{.Company}}!
+        type: string
+      name:
+        example: welcome_email
+        type: string
+      subject:
+        example: Welcome, {{.Name}}!
+        type: string
+    required:
+    - channel
+    - content
+    - name
+    type: object
+  handler.ErrorResponse:
+    properties:
+      details: {}
+      error:
+        example: entity not found
+        type: string
+    type: object
+  handler.HealthResponse:
+    properties:
+      status:
+        example: ok
+        type: string
+    type: object
+  handler.NotificationResponse:
+    properties:
+      attempts:
+        type: integer
+      batch_id:
+        type: string
+      channel:
+        type: string
+      content:
+        type: string
+      created_at:
+        type: string
+      error_message:
+        type: string
+      id:
+        type: string
+      idempotency_key:
+        type: string
+      last_attempt_at:
+        type: string
+      max_attempts:
+        type: integer
+      next_retry_at:
+        type: string
+      priority:
+        type: string
+      provider_message_id:
+        type: string
+      recipient:
+        type: string
+      scheduled_at:
+        type: string
+      status:
+        type: string
+      subject:
+        type: string
+      template_id:
+        type: string
+      template_vars:
+        additionalProperties:
+          type: string
+        type: object
+      updated_at:
+        type: string
+    type: object
+  handler.PaginatedNotificationsResponse:
+    properties:
+      limit:
+        example: 20
+        type: integer
+      notifications:
+        items:
+          $ref: '#/definitions/handler.NotificationResponse'
+        type: array
+      offset:
+        example: 0
+        type: integer
+      total:
+        example: 42
+        type: integer
+    type: object
+  handler.PaginatedTemplatesResponse:
+    properties:
+      limit:
+        example: 20
+        type: integer
+      offset:
+        example: 0
+        type: integer
+      templates:
+        items:
+          $ref: '#/definitions/handler.TemplateResponse'
+        type: array
+      total:
+        example: 10
+        type: integer
+    type: object
+  handler.ReadyResponse:
+    properties:
+      services:
+        additionalProperties:
+          type: string
+        type: object
+      status:
+        example: ok
+        type: string
+    type: object
+  handler.RenderTemplateRequest:
+    properties:
+      variables:
+        additionalProperties:
+          type: string
+        type: object
+    required:
+    - variables
+    type: object
+  handler.RenderTemplateResponse:
+    properties:
+      content:
+        example: Hello John, welcome to Insider!
+        type: string
+      subject:
+        example: Welcome, John!
+        type: string
+    type: object
+  handler.TemplateResponse:
+    properties:
+      channel:
+        type: string
+      content:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      is_active:
+        type: boolean
+      name:
+        type: string
+      subject:
+        type: string
+      updated_at:
+        type: string
+      variables:
+        items:
+          type: string
+        type: array
+    type: object
+  handler.UpdateTemplateRequest:
+    properties:
+      channel:
+        example: email
+        type: string
+      content:
+        example: Hello {{.Name}}, welcome to {{.Company}}!
+        type: string
+      is_active:
+        example: true
+        type: boolean
+      name:
+        example: welcome_email_v2
+        type: string
+      subject:
+        example: Welcome, {{.Name}}!
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact: {}
+  description: Event-driven notification system with SMS, Email, and Push channels
+  title: Insider One Notification System API
+  version: "1.0"
+paths:
+  /api/v1/notifications:
+    get:
+      description: List notifications with optional filters, sorting, and pagination.
+      parameters:
+      - description: Filter by channel
+        enum:
+        - sms
+        - email
+        - push
+        in: query
+        name: channel
+        type: string
+      - description: Filter by status
+        enum:
+        - pending
+        - queued
+        - processing
+        - delivered
+        - failed
+        - cancelled
+        in: query
+        name: status
+        type: string
+      - description: Filter by priority
+        enum:
+        - high
+        - normal
+        - low
+        in: query
+        name: priority
+        type: string
+      - description: Filter by recipient
+        in: query
+        name: recipient
+        type: string
+      - default: 0
+        description: Offset
+        in: query
+        name: offset
+        type: integer
+      - default: 20
+        description: Limit
+        in: query
+        name: limit
+        type: integer
+      - default: created_at
+        description: Sort field
+        in: query
+        name: sort_by
+        type: string
+      - default: desc
+        description: Sort direction
+        enum:
+        - asc
+        - desc
+        in: query
+        name: sort_order
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PaginatedNotificationsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      summary: List notifications
+      tags:
+      - notifications
+    post:
+      consumes:
+      - application/json
+      description: Create a single notification for asynchronous delivery.
+      parameters:
+      - description: Notification payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreateNotificationRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.CreateNotificationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "409":
+          description: Duplicate idempotency key
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "422":
+          description: Validation error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      summary: Create a notification
+      tags:
+      - notifications
+  /api/v1/notifications/{id}:
+    get:
+      description: Retrieve a single notification by its UUID.
+      parameters:
+      - description: Notification ID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.NotificationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      summary: Get a notification by ID
+      tags:
+      - notifications
+  /api/v1/notifications/{id}/cancel:
+    patch:
+      description: Cancel a pending or queued notification. Cannot cancel already
+        delivered or failed notifications.
+      parameters:
+      - description: Notification ID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.CancelNotificationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      summary: Cancel a notification
+      tags:
+      - notifications
+  /api/v1/notifications/batch:
+    post:
+      consumes:
+      - application/json
+      description: Create up to 1000 notifications in a single request.
+      parameters:
+      - description: Batch payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.BatchCreateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.BatchCreateResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "409":
+          description: Duplicate idempotency key
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "422":
+          description: Validation error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      summary: Create a batch of notifications
+      tags:
+      - notifications
+  /api/v1/notifications/batch/{batchId}:
+    get:
+      description: Retrieve all notifications belonging to a batch with pagination.
+      parameters:
+      - description: Batch ID
+        format: uuid
+        in: path
+        name: batchId
+        required: true
+        type: string
+      - default: 0
+        description: Offset
+        in: query
+        name: offset
+        type: integer
+      - default: 20
+        description: Limit
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PaginatedNotificationsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      summary: Get notifications by batch ID
+      tags:
+      - notifications
+  /api/v1/templates:
+    get:
+      description: List all templates with pagination.
+      parameters:
+      - default: 0
+        description: Offset
+        in: query
+        name: offset
+        type: integer
+      - default: 20
+        description: Limit
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.PaginatedTemplatesResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      summary: List templates
+      tags:
+      - templates
+    post:
+      consumes:
+      - application/json
+      description: Create a new message template with variable placeholders.
+      parameters:
+      - description: Template payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreateTemplateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.TemplateResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "422":
+          description: Validation error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      summary: Create a template
+      tags:
+      - templates
+  /api/v1/templates/{id}:
+    delete:
+      description: Delete a template by its UUID.
+      parameters:
+      - description: Template ID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      summary: Delete a template
+      tags:
+      - templates
+    get:
+      description: Retrieve a single template by its UUID.
+      parameters:
+      - description: Template ID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.TemplateResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      summary: Get a template by ID
+      tags:
+      - templates
+    put:
+      consumes:
+      - application/json
+      description: Update an existing template's mutable fields.
+      parameters:
+      - description: Template ID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Fields to update
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpdateTemplateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.TemplateResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "422":
+          description: Validation error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      summary: Update a template
+      tags:
+      - templates
+  /api/v1/templates/{id}/render:
+    post:
+      consumes:
+      - application/json
+      description: Render a template with the provided variables and return the result.
+      parameters:
+      - description: Template ID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Variables for substitution
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.RenderTemplateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.RenderTemplateResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "422":
+          description: Missing required variables
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      summary: Render a template
+      tags:
+      - templates
+  /health:
+    get:
+      description: Returns 200 if the service is alive. Used by load balancers and
+        orchestrators.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.HealthResponse'
+      summary: Liveness probe
+      tags:
+      - health
+  /ready:
+    get:
+      description: Returns 200 if all dependencies (DB, Redis) are reachable. Returns
+        503 otherwise.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ReadyResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/handler.ReadyResponse'
+      summary: Readiness probe
+      tags:
+      - health
+swagger: "2.0"
