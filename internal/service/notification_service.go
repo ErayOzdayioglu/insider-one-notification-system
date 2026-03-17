@@ -27,10 +27,11 @@ type statusUpdate struct {
 
 // notificationService implements domainservice.NotificationService.
 type notificationService struct {
-	repo     repository.NotificationRepository
-	producer queue.Producer
-	pubsub   redisPubSub.PubSub
-	logger   *slog.Logger
+	repo        repository.NotificationRepository
+	templateSvc domainservice.TemplateService
+	producer    queue.Producer
+	pubsub      redisPubSub.PubSub
+	logger      *slog.Logger
 }
 
 // Compile-time interface satisfaction check.
@@ -40,15 +41,17 @@ var _ domainservice.NotificationService = (*notificationService)(nil)
 // dependencies injected.
 func NewNotificationService(
 	repo repository.NotificationRepository,
+	templateSvc domainservice.TemplateService,
 	producer queue.Producer,
 	pubsub redisPubSub.PubSub,
 	logger *slog.Logger,
 ) domainservice.NotificationService {
 	return &notificationService{
-		repo:     repo,
-		producer: producer,
-		pubsub:   pubsub,
-		logger:   logger,
+		repo:        repo,
+		templateSvc: templateSvc,
+		producer:    producer,
+		pubsub:      pubsub,
+		logger:      logger,
 	}
 }
 
@@ -56,6 +59,10 @@ func NewNotificationService(
 // not scheduled for the future, it is immediately enqueued for processing.
 // A status change event is broadcast via PubSub after each state transition.
 func (s *notificationService) Create(ctx context.Context, notification *entity.Notification) error {
+	if err := s.renderTemplate(ctx, notification); err != nil {
+		return err
+	}
+
 	if err := validateNotification(notification); err != nil {
 		return err
 	}
@@ -101,6 +108,9 @@ func (s *notificationService) CreateBatch(ctx context.Context, notifications []*
 	batchID := uuid.New()
 
 	for i, n := range notifications {
+		if err := s.renderTemplate(ctx, n); err != nil {
+			return fmt.Errorf("notification at index %d: %w", i, err)
+		}
 		if err := validateNotification(n); err != nil {
 			return fmt.Errorf("notification at index %d: %w", i, err)
 		}
@@ -181,6 +191,27 @@ func (s *notificationService) List(ctx context.Context, filter repository.ListFi
 		return nil, 0, fmt.Errorf("listing notifications: %w", err)
 	}
 	return notifications, total, nil
+}
+
+// renderTemplate checks if a notification references a template_id. If so,
+// it fetches the template, renders subject and content with the provided
+// template_vars, and writes the rendered values back into the notification.
+func (s *notificationService) renderTemplate(ctx context.Context, n *entity.Notification) error {
+	if n.TemplateID == nil {
+		return nil
+	}
+
+	subject, content, err := s.templateSvc.Render(ctx, *n.TemplateID, n.TemplateVars)
+	if err != nil {
+		return fmt.Errorf("rendering template %s: %w", n.TemplateID, err)
+	}
+
+	n.Content = content
+	if subject != "" {
+		n.Subject = &subject
+	}
+
+	return nil
 }
 
 // validateNotification runs the entity's own validation and converts any

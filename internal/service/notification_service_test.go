@@ -141,7 +141,7 @@ func TestNotificationService_Create_HappyPath(t *testing.T) {
 	producer := &mockProducer{}
 	pubsub := &mockPubSub{}
 
-	svc := NewNotificationService(repo, producer, pubsub, testLogger())
+	svc := NewNotificationService(repo, nil, producer, pubsub, testLogger())
 	ctx := context.Background()
 	n := validTestNotification()
 
@@ -157,7 +157,7 @@ func TestNotificationService_Create_ValidationError(t *testing.T) {
 	producer := &mockProducer{}
 	pubsub := &mockPubSub{}
 
-	svc := NewNotificationService(repo, producer, pubsub, testLogger())
+	svc := NewNotificationService(repo, nil, producer, pubsub, testLogger())
 	ctx := context.Background()
 
 	n := entity.NewNotification("invalid", entity.PriorityNormal, "+15551234567", "Hello", "key-1")
@@ -177,7 +177,7 @@ func TestNotificationService_Create_DuplicateIdempotencyKey(t *testing.T) {
 	producer := &mockProducer{}
 	pubsub := &mockPubSub{}
 
-	svc := NewNotificationService(repo, producer, pubsub, testLogger())
+	svc := NewNotificationService(repo, nil, producer, pubsub, testLogger())
 	ctx := context.Background()
 
 	err := svc.Create(ctx, validTestNotification())
@@ -191,7 +191,7 @@ func TestNotificationService_CreateBatch_HappyPath(t *testing.T) {
 	producer := &mockProducer{}
 	pubsub := &mockPubSub{}
 
-	svc := NewNotificationService(repo, producer, pubsub, testLogger())
+	svc := NewNotificationService(repo, nil, producer, pubsub, testLogger())
 	ctx := context.Background()
 
 	notifications := make([]*entity.Notification, 3)
@@ -218,7 +218,7 @@ func TestNotificationService_CreateBatch_ExceedsLimit(t *testing.T) {
 	producer := &mockProducer{}
 	pubsub := &mockPubSub{}
 
-	svc := NewNotificationService(repo, producer, pubsub, testLogger())
+	svc := NewNotificationService(repo, nil, producer, pubsub, testLogger())
 	ctx := context.Background()
 
 	notifications := make([]*entity.Notification, 1001)
@@ -236,7 +236,7 @@ func TestNotificationService_CreateBatch_EmptyBatch(t *testing.T) {
 	producer := &mockProducer{}
 	pubsub := &mockPubSub{}
 
-	svc := NewNotificationService(repo, producer, pubsub, testLogger())
+	svc := NewNotificationService(repo, nil, producer, pubsub, testLogger())
 	ctx := context.Background()
 
 	err := svc.CreateBatch(ctx, []*entity.Notification{})
@@ -257,7 +257,7 @@ func TestNotificationService_GetByID_Found(t *testing.T) {
 	producer := &mockProducer{}
 	pubsub := &mockPubSub{}
 
-	svc := NewNotificationService(repo, producer, pubsub, testLogger())
+	svc := NewNotificationService(repo, nil, producer, pubsub, testLogger())
 	ctx := context.Background()
 
 	result, err := svc.GetByID(ctx, expected.ID)
@@ -274,7 +274,7 @@ func TestNotificationService_GetByID_NotFound(t *testing.T) {
 	producer := &mockProducer{}
 	pubsub := &mockPubSub{}
 
-	svc := NewNotificationService(repo, producer, pubsub, testLogger())
+	svc := NewNotificationService(repo, nil, producer, pubsub, testLogger())
 	ctx := context.Background()
 
 	_, err := svc.GetByID(ctx, uuid.New())
@@ -291,7 +291,7 @@ func TestNotificationService_Cancel_Success(t *testing.T) {
 	producer := &mockProducer{}
 	pubsub := &mockPubSub{}
 
-	svc := NewNotificationService(repo, producer, pubsub, testLogger())
+	svc := NewNotificationService(repo, nil, producer, pubsub, testLogger())
 	ctx := context.Background()
 
 	err := svc.Cancel(ctx, uuid.New())
@@ -308,7 +308,7 @@ func TestNotificationService_Cancel_NotFound(t *testing.T) {
 	producer := &mockProducer{}
 	pubsub := &mockPubSub{}
 
-	svc := NewNotificationService(repo, producer, pubsub, testLogger())
+	svc := NewNotificationService(repo, nil, producer, pubsub, testLogger())
 	ctx := context.Background()
 
 	err := svc.Cancel(ctx, uuid.New())
