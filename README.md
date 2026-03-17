@@ -74,7 +74,7 @@ Event-driven notification system that processes and delivers messages through **
 
 | Layer | Technology |
 |-------|-----------|
-| Language | Go 1.22 |
+| Language | Go 1.26 |
 | Router | Gin |
 | Database | PostgreSQL 16 |
 | Queue / Cache | Redis 7 (Streams, Pub/Sub, Lua scripting) |
@@ -90,7 +90,7 @@ Event-driven notification system that processes and delivers messages through **
 ### Prerequisites
 
 - Docker and Docker Compose
-- Go 1.22+ (for local development)
+- Go 1.26+ (for local development)
 
 ### Quick Start
 
@@ -240,6 +240,49 @@ Status will be `pending` until the scheduled time, then automatically queued by 
 
 #### Using Templates
 
+Templates let you define reusable message layouts with variable placeholders. When a notification references a `template_id`, the system automatically renders the template with the provided variables before delivery.
+
+**Step 1 — Create a template:**
+```bash
+curl -X POST http://localhost:8080/api/v1/templates \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "welcome_email",
+    "channel": "email",
+    "subject": "Welcome, {{.Name}}!",
+    "content": "Hello {{.Name}}, welcome to {{.Company}}! Your account is ready."
+  }'
+```
+Response `201`:
+```json
+{
+  "id": "b3f1a2c4-...",
+  "name": "welcome_email",
+  "channel": "email",
+  "subject": "Welcome, {{.Name}}!",
+  "content": "Hello {{.Name}}, welcome to {{.Company}}! Your account is ready.",
+  "variables": ["Name", "Company"],
+  "is_active": true
+}
+```
+
+**Step 2 — (Optional) Preview the rendered output:**
+```bash
+curl -X POST http://localhost:8080/api/v1/templates/b3f1a2c4-.../render \
+  -H "Content-Type: application/json" \
+  -d '{
+    "variables": { "Name": "Eray", "Company": "Insider" }
+  }'
+```
+Response `200`:
+```json
+{
+  "subject": "Welcome, Eray!",
+  "content": "Hello Eray, welcome to Insider! Your account is ready."
+}
+```
+
+**Step 3 — Send a notification using the template:**
 ```bash
 curl -X POST http://localhost:8080/api/v1/notifications \
   -H "Content-Type: application/json" \
@@ -248,13 +291,18 @@ curl -X POST http://localhost:8080/api/v1/notifications \
     "channel": "email",
     "priority": "high",
     "recipient": "user@example.com",
-    "content": "Hello {{.Name}}, welcome to {{.Company}}!",
+    "content": "fallback content",
+    "template_id": "b3f1a2c4-...",
     "template_vars": {
-      "Name": "John",
+      "Name": "Eray",
       "Company": "Insider"
     }
   }'
 ```
+
+The notification's `content` and `subject` are automatically replaced with the rendered template output. The `content` field in the request serves as a fallback and is required by validation, but it gets overwritten by the template.
+
+You can also use inline variable substitution without a stored template — just put `{{.Variable}}` placeholders directly in the `content` field with `template_vars`.
 
 #### Get Notification
 
