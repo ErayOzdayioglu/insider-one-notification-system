@@ -340,7 +340,39 @@ GET /swagger/*       # Swagger UI
 
 ## WebSocket
 
-Connect to receive real-time notification status updates:
+Real-time notification status updates. Every status change (`pending` -> `queued` -> `processing` -> `delivered`/`failed`/`cancelled`) is broadcast to connected clients.
+
+### Quick Test (Terminal)
+
+```bash
+# Install wscat (one-time)
+npm install -g wscat
+
+# Connect
+wscat -c ws://localhost:8080/api/v1/ws
+```
+
+Then in another terminal, create a notification:
+```bash
+curl -X POST http://localhost:8080/api/v1/notifications \
+  -H "Content-Type: application/json" \
+  -d '{
+    "idempotency_key": "ws-test-1",
+    "channel": "email",
+    "priority": "high",
+    "recipient": "test@example.com",
+    "content": "Testing WebSocket updates"
+  }'
+```
+
+You'll see status updates stream in the wscat terminal:
+```json
+{"notification_id":"550e8400-...","status":"queued","timestamp":"2026-03-17T12:00:00Z"}
+{"notification_id":"550e8400-...","status":"processing","timestamp":"2026-03-17T12:00:01Z"}
+{"notification_id":"550e8400-...","status":"delivered","provider_message_id":"msg-123","timestamp":"2026-03-17T12:00:02Z"}
+```
+
+### Browser (JavaScript)
 
 ```javascript
 const ws = new WebSocket("ws://localhost:8080/api/v1/ws");
@@ -348,16 +380,8 @@ const ws = new WebSocket("ws://localhost:8080/api/v1/ws");
 ws.onmessage = (event) => {
   const update = JSON.parse(event.data);
   console.log(update);
-  // {
-  //   "notification_id": "550e8400-...",
-  //   "status": "delivered",
-  //   "provider_message_id": "msg-123",
-  //   "timestamp": "2026-03-17T12:00:05Z"
-  // }
 };
 ```
-
-Status transitions broadcast: `pending` -> `queued` -> `processing` -> `delivered`/`failed`/`cancelled`
 
 ## Design Decisions
 
