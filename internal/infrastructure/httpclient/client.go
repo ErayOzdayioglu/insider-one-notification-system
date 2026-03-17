@@ -116,20 +116,28 @@ func (c *webhookClient) Send(ctx context.Context, notification *entity.Notificat
 		return nil, fmt.Errorf("webhook returned non-2xx status %d: %s", resp.StatusCode, string(respBody))
 	}
 
+	// Best-effort JSON parse — webhook.site may return plain text or empty body.
 	var webhookResp webhookDeliveryResponse
-	if err := json.Unmarshal(respBody, &webhookResp); err != nil {
-		return nil, fmt.Errorf("unmarshalling webhook response: %w", err)
-	}
+	_ = json.Unmarshal(respBody, &webhookResp)
 
 	ts, err := time.Parse(time.RFC3339, webhookResp.Timestamp)
 	if err != nil {
-		// Fall back to current time if the timestamp format is unexpected.
 		ts = time.Now().UTC()
 	}
 
+	msgID := webhookResp.MessageID
+	if msgID == "" {
+		msgID = fmt.Sprintf("wh-%d", time.Now().UnixNano())
+	}
+
+	status := webhookResp.Status
+	if status == "" {
+		status = "accepted"
+	}
+
 	return &DeliveryResponse{
-		MessageID: webhookResp.MessageID,
-		Status:    webhookResp.Status,
+		MessageID: msgID,
+		Status:    status,
 		Timestamp: ts,
 	}, nil
 }
