@@ -200,15 +200,12 @@ func main() {
 
 	router := handler.NewRouter(handler.RouterDeps{
 		Logger:              logger,
+		Metrics:             appMetrics,
 		NotificationHandler: notificationHandler,
 		TemplateHandler:     templateHandler,
 		HealthHandler:       healthHandler,
 		WebSocketHandler:    wsHandler,
 	})
-
-	// Add metrics and tracing middleware.
-	router.Use(metrics.HTTPMetricsMiddleware(appMetrics))
-	router.Use(tracing.HTTPTracingMiddleware())
 
 	// -----------------------------------------------------------------------
 	// Start HTTP server

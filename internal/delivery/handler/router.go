@@ -6,11 +6,14 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 
 	"github.com/erayozdayioglu/insider-one-notification-system/docs"
 	"github.com/erayozdayioglu/insider-one-notification-system/internal/delivery/middleware"
+	"github.com/erayozdayioglu/insider-one-notification-system/internal/metrics"
+	"github.com/erayozdayioglu/insider-one-notification-system/internal/tracing"
 )
 
 // WebSocketHandler is the interface expected from the WebSocket delivery layer.
@@ -22,6 +25,7 @@ type WebSocketHandler interface {
 // RouterDeps aggregates all dependencies needed to build the HTTP router.
 type RouterDeps struct {
 	Logger              *slog.Logger
+	Metrics             *metrics.Metrics
 	NotificationHandler *NotificationHandler
 	TemplateHandler     *TemplateHandler
 	HealthHandler       *HealthHandler
@@ -39,6 +43,10 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 	router.Use(middleware.Logging(deps.Logger))
 	router.Use(middleware.Recovery(deps.Logger))
 	router.Use(corsMiddleware())
+	if deps.Metrics != nil {
+		router.Use(metrics.HTTPMetricsMiddleware(deps.Metrics))
+	}
+	router.Use(tracing.HTTPTracingMiddleware())
 
 	// ---------------------------------------------------------------------------
 	// Health and readiness (outside /api/v1 to keep probes simple)
@@ -57,11 +65,9 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 	))
 
 	// ---------------------------------------------------------------------------
-	// Metrics placeholder
+	// Prometheus metrics
 	// ---------------------------------------------------------------------------
-	router.GET("/metrics", func(c *gin.Context) {
-		c.String(http.StatusOK, "# metrics endpoint placeholder\n")
-	})
+	router.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	// ---------------------------------------------------------------------------
 	// API v1 routes

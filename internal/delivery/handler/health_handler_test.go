@@ -100,6 +100,57 @@ func TestHealthHandler_Readiness(t *testing.T) {
 			wantStatusCode: http.StatusOK,
 			wantStatus:     "ok",
 		},
+		{
+			name: "503 when multiple checkers and one fails",
+			checkers: map[string]HealthChecker{
+				"postgres": &mockHealthChecker{
+					pingFunc: func(_ context.Context) error { return nil },
+				},
+				"redis": &mockHealthChecker{
+					pingFunc: func(_ context.Context) error {
+						return errors.New("connection refused")
+					},
+				},
+				"kafka": &mockHealthChecker{
+					pingFunc: func(_ context.Context) error { return nil },
+				},
+			},
+			wantStatusCode: http.StatusServiceUnavailable,
+			wantStatus:     "degraded",
+		},
+		{
+			name: "200 when all three checkers pass",
+			checkers: map[string]HealthChecker{
+				"postgres": &mockHealthChecker{
+					pingFunc: func(_ context.Context) error { return nil },
+				},
+				"redis": &mockHealthChecker{
+					pingFunc: func(_ context.Context) error { return nil },
+				},
+				"kafka": &mockHealthChecker{
+					pingFunc: func(_ context.Context) error { return nil },
+				},
+			},
+			wantStatusCode: http.StatusOK,
+			wantStatus:     "ok",
+		},
+		{
+			name: "503 when all checkers fail",
+			checkers: map[string]HealthChecker{
+				"postgres": &mockHealthChecker{
+					pingFunc: func(_ context.Context) error {
+						return errors.New("connection timeout")
+					},
+				},
+				"redis": &mockHealthChecker{
+					pingFunc: func(_ context.Context) error {
+						return errors.New("connection refused")
+					},
+				},
+			},
+			wantStatusCode: http.StatusServiceUnavailable,
+			wantStatus:     "degraded",
+		},
 	}
 
 	for _, tt := range tests {
@@ -118,9 +169,17 @@ func TestHealthHandler_Readiness(t *testing.T) {
 			assert.Equal(t, tt.wantStatus, resp.Status)
 
 			if tt.wantStatusCode == http.StatusServiceUnavailable {
-				// Verify unhealthy service is reported.
-				assert.Contains(t, resp.Services["redis"], "unhealthy")
-				assert.Equal(t, "ok", resp.Services["postgres"])
+				// Verify unhealthy services are reported.
+				for name, status := range resp.Services {
+					if status != "ok" {
+						assert.Contains(t, status, "unhealthy", "service %s should report unhealthy", name)
+					}
+				}
+			}
+			if tt.wantStatusCode == http.StatusOK && len(tt.checkers) > 0 {
+				for _, status := range resp.Services {
+					assert.Equal(t, "ok", status)
+				}
 			}
 		})
 	}

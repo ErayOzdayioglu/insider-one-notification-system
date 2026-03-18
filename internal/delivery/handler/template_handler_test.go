@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -84,7 +85,10 @@ func setupTemplateRouter(svc *mockTemplateService) *gin.Engine {
 	g := r.Group("/api/v1/templates")
 	{
 		g.POST("", h.Create)
+		g.GET("", h.List)
 		g.GET("/:id", h.GetByID)
+		g.PUT("/:id", h.Update)
+		g.DELETE("/:id", h.Delete)
 		g.POST("/:id/render", h.Render)
 	}
 	return r
@@ -356,6 +360,288 @@ func TestTemplateHandler_Render(t *testing.T) {
 			w := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/templates/"+tt.urlID+"/render", bytes.NewReader(bodyBytes))
 			req.Header.Set("Content-Type", "application/json")
+
+			router.ServeHTTP(w, req)
+
+			assert.Equal(t, tt.wantStatusCode, w.Code)
+			if tt.checkBody != nil {
+				tt.checkBody(t, w.Body.Bytes())
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Update handler tests
+// ---------------------------------------------------------------------------
+
+func TestTemplateHandler_Update(t *testing.T) {
+	tmplID := uuid.New()
+	newName := "updated_template"
+	newContent := "Updated {{.Name}}!"
+	isActive := false
+
+	tests := []struct {
+		name           string
+		urlID          string
+		body           any
+		setupMock      func(m *mockTemplateService)
+		wantStatusCode int
+		checkBody      func(t *testing.T, body []byte)
+	}{
+		{
+			name:  "200 success",
+			urlID: tmplID.String(),
+			body: UpdateTemplateRequest{
+				Name:     &newName,
+				Content:  &newContent,
+				IsActive: &isActive,
+			},
+			setupMock: func(m *mockTemplateService) {
+				m.getByIDFunc = func(_ context.Context, id uuid.UUID) (*entity.Template, error) {
+					return makeTemplate(id), nil
+				}
+				m.updateFunc = func(_ context.Context, t *entity.Template) error {
+					return nil
+				}
+			},
+			wantStatusCode: http.StatusOK,
+			checkBody: func(t *testing.T, body []byte) {
+				var resp TemplateResponse
+				require.NoError(t, json.Unmarshal(body, &resp))
+				assert.Equal(t, tmplID.String(), resp.ID)
+				assert.Equal(t, "updated_template", resp.Name)
+				assert.Equal(t, "Updated {{.Name}}!", resp.Content)
+				assert.False(t, resp.IsActive)
+			},
+		},
+		{
+			name:  "404 not found on get",
+			urlID: tmplID.String(),
+			body: UpdateTemplateRequest{
+				Name: &newName,
+			},
+			setupMock: func(m *mockTemplateService) {
+				m.getByIDFunc = func(_ context.Context, id uuid.UUID) (*entity.Template, error) {
+					return nil, domainerrors.NewNotFoundError("template", id.String())
+				}
+			},
+			wantStatusCode: http.StatusNotFound,
+		},
+		{
+			name:           "400 invalid UUID",
+			urlID:          "bad-id",
+			body:           UpdateTemplateRequest{Name: &newName},
+			setupMock:      func(m *mockTemplateService) {},
+			wantStatusCode: http.StatusBadRequest,
+		},
+		{
+			name:           "400 invalid JSON",
+			urlID:          tmplID.String(),
+			body:           "not json",
+			setupMock:      func(m *mockTemplateService) {},
+			wantStatusCode: http.StatusBadRequest,
+		},
+		{
+			name:  "422 validation error on update",
+			urlID: tmplID.String(),
+			body: UpdateTemplateRequest{
+				Name: &newName,
+			},
+			setupMock: func(m *mockTemplateService) {
+				m.getByIDFunc = func(_ context.Context, id uuid.UUID) (*entity.Template, error) {
+					return makeTemplate(id), nil
+				}
+				m.updateFunc = func(_ context.Context, _ *entity.Template) error {
+					return domainerrors.NewValidationError("name", "name already exists")
+				}
+			},
+			wantStatusCode: http.StatusUnprocessableEntity,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &mockTemplateService{}
+			tt.setupMock(mock)
+			router := setupTemplateRouter(mock)
+
+			bodyBytes, err := json.Marshal(tt.body)
+			require.NoError(t, err)
+
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/templates/"+tt.urlID, bytes.NewReader(bodyBytes))
+			req.Header.Set("Content-Type", "application/json")
+
+			router.ServeHTTP(w, req)
+
+			assert.Equal(t, tt.wantStatusCode, w.Code)
+			if tt.checkBody != nil {
+				tt.checkBody(t, w.Body.Bytes())
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Delete handler tests
+// ---------------------------------------------------------------------------
+
+func TestTemplateHandler_Delete(t *testing.T) {
+	tmplID := uuid.New()
+
+	tests := []struct {
+		name           string
+		urlID          string
+		setupMock      func(m *mockTemplateService)
+		wantStatusCode int
+		checkBody      func(t *testing.T, body []byte)
+	}{
+		{
+			name:  "204 success",
+			urlID: tmplID.String(),
+			setupMock: func(m *mockTemplateService) {
+				m.deleteFunc = func(_ context.Context, _ uuid.UUID) error {
+					return nil
+				}
+			},
+			wantStatusCode: http.StatusNoContent,
+		},
+		{
+			name:  "404 not found",
+			urlID: tmplID.String(),
+			setupMock: func(m *mockTemplateService) {
+				m.deleteFunc = func(_ context.Context, id uuid.UUID) error {
+					return domainerrors.NewNotFoundError("template", id.String())
+				}
+			},
+			wantStatusCode: http.StatusNotFound,
+			checkBody: func(t *testing.T, body []byte) {
+				var resp ErrorResponse
+				require.NoError(t, json.Unmarshal(body, &resp))
+				assert.Contains(t, resp.Error, "not found")
+			},
+		},
+		{
+			name:           "400 invalid UUID",
+			urlID:          "not-a-uuid",
+			setupMock:      func(m *mockTemplateService) {},
+			wantStatusCode: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &mockTemplateService{}
+			tt.setupMock(mock)
+			router := setupTemplateRouter(mock)
+
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodDelete, "/api/v1/templates/"+tt.urlID, nil)
+
+			router.ServeHTTP(w, req)
+
+			assert.Equal(t, tt.wantStatusCode, w.Code)
+			if tt.checkBody != nil {
+				tt.checkBody(t, w.Body.Bytes())
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// List handler tests
+// ---------------------------------------------------------------------------
+
+func TestTemplateHandler_List(t *testing.T) {
+	tests := []struct {
+		name           string
+		query          string
+		setupMock      func(m *mockTemplateService)
+		wantStatusCode int
+		checkBody      func(t *testing.T, body []byte)
+	}{
+		{
+			name:  "200 success with pagination",
+			query: "?offset=0&limit=10",
+			setupMock: func(m *mockTemplateService) {
+				m.listFunc = func(_ context.Context, params repository.ListParams) ([]*entity.Template, int64, error) {
+					assert.Equal(t, 0, params.Offset)
+					assert.Equal(t, 10, params.Limit)
+					t1 := makeTemplate(uuid.New())
+					t2 := makeTemplate(uuid.New())
+					return []*entity.Template{t1, t2}, 2, nil
+				}
+			},
+			wantStatusCode: http.StatusOK,
+			checkBody: func(t *testing.T, body []byte) {
+				var resp PaginatedTemplatesResponse
+				require.NoError(t, json.Unmarshal(body, &resp))
+				assert.Len(t, resp.Templates, 2)
+				assert.Equal(t, int64(2), resp.Total)
+				assert.Equal(t, 0, resp.Offset)
+				assert.Equal(t, 10, resp.Limit)
+			},
+		},
+		{
+			name:  "200 with default pagination",
+			query: "",
+			setupMock: func(m *mockTemplateService) {
+				m.listFunc = func(_ context.Context, params repository.ListParams) ([]*entity.Template, int64, error) {
+					assert.Equal(t, 0, params.Offset)
+					assert.Equal(t, 20, params.Limit) // defaultLimit
+					return []*entity.Template{}, 0, nil
+				}
+			},
+			wantStatusCode: http.StatusOK,
+			checkBody: func(t *testing.T, body []byte) {
+				var resp PaginatedTemplatesResponse
+				require.NoError(t, json.Unmarshal(body, &resp))
+				assert.Empty(t, resp.Templates)
+				assert.Equal(t, int64(0), resp.Total)
+			},
+		},
+		{
+			name:  "200 with second page",
+			query: "?offset=10&limit=5",
+			setupMock: func(m *mockTemplateService) {
+				m.listFunc = func(_ context.Context, params repository.ListParams) ([]*entity.Template, int64, error) {
+					assert.Equal(t, 10, params.Offset)
+					assert.Equal(t, 5, params.Limit)
+					t1 := makeTemplate(uuid.New())
+					return []*entity.Template{t1}, 15, nil
+				}
+			},
+			wantStatusCode: http.StatusOK,
+			checkBody: func(t *testing.T, body []byte) {
+				var resp PaginatedTemplatesResponse
+				require.NoError(t, json.Unmarshal(body, &resp))
+				assert.Len(t, resp.Templates, 1)
+				assert.Equal(t, int64(15), resp.Total)
+				assert.Equal(t, 10, resp.Offset)
+				assert.Equal(t, 5, resp.Limit)
+			},
+		},
+		{
+			name:  "500 on service error",
+			query: "",
+			setupMock: func(m *mockTemplateService) {
+				m.listFunc = func(_ context.Context, _ repository.ListParams) ([]*entity.Template, int64, error) {
+					return nil, 0, errors.New("db error")
+				}
+			},
+			wantStatusCode: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &mockTemplateService{}
+			tt.setupMock(mock)
+			router := setupTemplateRouter(mock)
+
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/templates"+tt.query, nil)
 
 			router.ServeHTTP(w, req)
 
