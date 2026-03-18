@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -364,4 +365,146 @@ func TestProcessor_Process_RateLimiterError(t *testing.T) {
 
 	// No ACK should have been called.
 	assert.Empty(t, consumer.ackCalls)
+}
+
+func TestProcessor_Process_CircuitBreakerOpen(t *testing.T) {
+	notif := makeTestNotification()
+	msg := makeQueueMessage(notif)
+
+	repo := &mockNotificationRepo{}
+	consumer := &mockConsumer{}
+	delivery := &mockDeliveryClient{
+		sendFunc: func(_ context.Context, _ *entity.Notification) (*httpclient.DeliveryResponse, error) {
+			return nil, fmt.Errorf("delivery through circuit breaker: %w", httpclient.ErrCircuitOpen)
+		},
+	}
+	limiter := &mockRateLimiter{}
+	pubsub := &mockPubSub{}
+
+	p := NewProcessor(repo, consumer, delivery, limiter, pubsub, defaultWorkerConfig())
+
+	err := p.Process(context.Background(), msg)
+	require.NoError(t, err) // Process handles delivery errors internally
+
+	// Should have: processing status, then failed status.
+	require.Len(t, repo.updateStatusCalls, 2)
+	assert.Equal(t, entity.StatusProcessing, repo.updateStatusCalls[0].Status)
+	assert.Equal(t, entity.StatusFailed, repo.updateStatusCalls[1].Status)
+	assert.NotNil(t, repo.updateStatusCalls[1].ErrMsg)
+	assert.Contains(t, *repo.updateStatusCalls[1].ErrMsg, "circuit breaker")
+
+	// Should have incremented attempts with a retry time (attempts 0 < maxAttempts 5).
+	require.Len(t, repo.incrementAttemptsCalls, 1)
+	assert.NotNil(t, repo.incrementAttemptsCalls[0].NextRetryAt)
+
+	// ACK should still be called.
+	require.Len(t, consumer.ackCalls, 1)
+}
+
+func TestProcessor_Process_UpdateStatusFailsAfterDelivery(t *testing.T) {
+	notif := makeTestNotification()
+	msg := makeQueueMessage(notif)
+
+	callCount := 0
+	repo := &mockNotificationRepo{
+		updateStatusFunc: func(_ context.Context, _ uuid.UUID, status entity.Status, _ *string, _ *string) error {
+			callCount++
+			// First call (processing) succeeds, second call (delivered) fails.
+			if callCount == 2 && status == entity.StatusDelivered {
+				return errors.New("database connection lost")
+			}
+			return nil
+		},
+	}
+	consumer := &mockConsumer{}
+	delivery := &mockDeliveryClient{
+		sendFunc: func(_ context.Context, _ *entity.Notification) (*httpclient.DeliveryResponse, error) {
+			return &httpclient.DeliveryResponse{
+				MessageID: "provider-msg-xyz",
+				Status:    "accepted",
+				Timestamp: time.Now().UTC(),
+			}, nil
+		},
+	}
+	limiter := &mockRateLimiter{}
+	pubsub := &mockPubSub{}
+
+	p := NewProcessor(repo, consumer, delivery, limiter, pubsub, defaultWorkerConfig())
+
+	err := p.Process(context.Background(), msg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "updating status to delivered")
+
+	// UpdateStatus was called twice (processing + delivered attempt).
+	assert.Equal(t, 2, callCount)
+
+	// ACK should NOT have been called since we errored before reaching it.
+	assert.Empty(t, consumer.ackCalls)
+}
+
+func TestProcessor_Process_AckFails(t *testing.T) {
+	notif := makeTestNotification()
+	msg := makeQueueMessage(notif)
+
+	repo := &mockNotificationRepo{}
+	consumer := &mockConsumer{
+		ackFunc: func(_ context.Context, _ entity.Channel, _ entity.Priority, _ string) error {
+			return errors.New("redis XACK failed")
+		},
+	}
+	delivery := &mockDeliveryClient{
+		sendFunc: func(_ context.Context, _ *entity.Notification) (*httpclient.DeliveryResponse, error) {
+			return &httpclient.DeliveryResponse{
+				MessageID: "provider-msg-ack-fail",
+				Status:    "accepted",
+				Timestamp: time.Now().UTC(),
+			}, nil
+		},
+	}
+	limiter := &mockRateLimiter{}
+	pubsub := &mockPubSub{}
+
+	p := NewProcessor(repo, consumer, delivery, limiter, pubsub, defaultWorkerConfig())
+
+	err := p.Process(context.Background(), msg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "acking message")
+
+	// Delivery was successful, status should reflect processing -> delivered.
+	require.Len(t, repo.updateStatusCalls, 2)
+	assert.Equal(t, entity.StatusProcessing, repo.updateStatusCalls[0].Status)
+	assert.Equal(t, entity.StatusDelivered, repo.updateStatusCalls[1].Status)
+
+	// ACK was attempted.
+	require.Len(t, consumer.ackCalls, 1)
+}
+
+func TestProcessor_Process_AckFailsAfterFailedDelivery(t *testing.T) {
+	notif := makeTestNotification()
+	notif.Attempts = 1
+	msg := makeQueueMessage(notif)
+
+	repo := &mockNotificationRepo{}
+	consumer := &mockConsumer{
+		ackFunc: func(_ context.Context, _ entity.Channel, _ entity.Priority, _ string) error {
+			return errors.New("redis XACK failed")
+		},
+	}
+	delivery := &mockDeliveryClient{
+		sendFunc: func(_ context.Context, _ *entity.Notification) (*httpclient.DeliveryResponse, error) {
+			return nil, errors.New("connection refused")
+		},
+	}
+	limiter := &mockRateLimiter{}
+	pubsub := &mockPubSub{}
+
+	p := NewProcessor(repo, consumer, delivery, limiter, pubsub, defaultWorkerConfig())
+
+	err := p.Process(context.Background(), msg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "acking failed message")
+
+	// Status transitions: processing -> failed.
+	require.Len(t, repo.updateStatusCalls, 2)
+	assert.Equal(t, entity.StatusFailed, repo.updateStatusCalls[1].Status)
 }

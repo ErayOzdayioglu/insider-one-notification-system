@@ -241,3 +241,186 @@ func TestTemplateService_GetByID_NotFound(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, domainerrors.ErrNotFound))
 }
+
+// --- Additional Tests ---
+
+func TestTemplateService_Update_Success(t *testing.T) {
+	var updatedTemplate *entity.Template
+
+	repo := &mockTemplateRepo{
+		updateFunc: func(_ context.Context, t *entity.Template) error {
+			updatedTemplate = t
+			return nil
+		},
+	}
+	eng := &mockTemplateEngine{}
+	svc := NewTemplateService(repo, eng)
+
+	tmpl := validTestTemplate()
+	tmpl.Content = "Updated: Hello {{.Name}}"
+	tmpl.Variables = entity.ExtractVariables(tmpl.Content)
+
+	err := svc.Update(context.Background(), tmpl)
+	require.NoError(t, err)
+	assert.Equal(t, tmpl.ID, updatedTemplate.ID)
+	assert.Equal(t, "Updated: Hello {{.Name}}", updatedTemplate.Content)
+}
+
+func TestTemplateService_Update_ValidationError(t *testing.T) {
+	repo := &mockTemplateRepo{}
+	eng := &mockTemplateEngine{}
+	svc := NewTemplateService(repo, eng)
+
+	tmpl := &entity.Template{
+		ID:      uuid.New(),
+		Name:    "", // missing name triggers validation error
+		Channel: entity.ChannelSMS,
+		Content: "Hello",
+	}
+
+	err := svc.Update(context.Background(), tmpl)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, domainerrors.ErrInvalidInput))
+}
+
+func TestTemplateService_Delete(t *testing.T) {
+	tests := []struct {
+		name      string
+		deleteErr error
+		wantErr   bool
+		errIs     error
+	}{
+		{
+			name:      "success",
+			deleteErr: nil,
+			wantErr:   false,
+		},
+		{
+			name:      "not found",
+			deleteErr: domainerrors.NewNotFoundError("template", "some-id"),
+			wantErr:   true,
+			errIs:     domainerrors.ErrNotFound,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &mockTemplateRepo{
+				deleteFunc: func(_ context.Context, _ uuid.UUID) error {
+					return tt.deleteErr
+				},
+			}
+			eng := &mockTemplateEngine{}
+			svc := NewTemplateService(repo, eng)
+
+			err := svc.Delete(context.Background(), uuid.New())
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errIs != nil {
+					assert.True(t, errors.Is(err, tt.errIs))
+				}
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestTemplateService_List_Success(t *testing.T) {
+	expected := []*entity.Template{
+		validTestTemplate(),
+		validTestTemplate(),
+	}
+	var expectedTotal int64 = 15
+
+	repo := &mockTemplateRepo{
+		listFunc: func(_ context.Context, params repository.ListParams) ([]*entity.Template, int64, error) {
+			assert.Equal(t, 0, params.Offset)
+			assert.Equal(t, 10, params.Limit)
+			return expected, expectedTotal, nil
+		},
+	}
+	eng := &mockTemplateEngine{}
+	svc := NewTemplateService(repo, eng)
+
+	params := repository.ListParams{Offset: 0, Limit: 10}
+	results, total, err := svc.List(context.Background(), params)
+	require.NoError(t, err)
+	assert.Len(t, results, 2)
+	assert.Equal(t, expectedTotal, total)
+}
+
+func TestTemplateService_List_RepoError(t *testing.T) {
+	repo := &mockTemplateRepo{
+		listFunc: func(_ context.Context, _ repository.ListParams) ([]*entity.Template, int64, error) {
+			return nil, 0, errors.New("db timeout")
+		},
+	}
+	eng := &mockTemplateEngine{}
+	svc := NewTemplateService(repo, eng)
+
+	_, _, err := svc.List(context.Background(), repository.ListParams{Limit: 10})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "listing templates")
+}
+
+func TestTemplateService_Render_WithSubject(t *testing.T) {
+	tmpl := validEmailTestTemplate()
+	tmpl.Variables = []string{"Name"}
+
+	repo := &mockTemplateRepo{
+		getByIDFunc: func(_ context.Context, id uuid.UUID) (*entity.Template, error) {
+			if id == tmpl.ID {
+				return tmpl, nil
+			}
+			return nil, domainerrors.NewNotFoundError("template", id.String())
+		},
+	}
+
+	renderCalls := 0
+	eng := &mockTemplateEngine{
+		renderFunc: func(content string, vars map[string]string) (string, error) {
+			renderCalls++
+			// Replace placeholder with actual value.
+			if content == tmpl.Content {
+				return "Hello Bob", nil
+			}
+			if content == *tmpl.Subject {
+				return "Welcome Bob", nil
+			}
+			return content, nil
+		},
+	}
+
+	svc := NewTemplateService(repo, eng)
+
+	subject, content, err := svc.Render(context.Background(), tmpl.ID, map[string]string{"Name": "Bob"})
+	require.NoError(t, err)
+	assert.Equal(t, "Welcome Bob", subject)
+	assert.Equal(t, "Hello Bob", content)
+	// Render should be called twice: once for content, once for subject.
+	assert.Equal(t, 2, renderCalls)
+}
+
+func TestTemplateService_Render_NoSubject(t *testing.T) {
+	tmpl := validTestTemplate() // SMS template, no subject
+
+	repo := &mockTemplateRepo{
+		getByIDFunc: func(_ context.Context, id uuid.UUID) (*entity.Template, error) {
+			return tmpl, nil
+		},
+	}
+
+	eng := &mockTemplateEngine{
+		renderFunc: func(content string, _ map[string]string) (string, error) {
+			return "Hello World", nil
+		},
+	}
+
+	svc := NewTemplateService(repo, eng)
+
+	subject, content, err := svc.Render(context.Background(), tmpl.ID, map[string]string{})
+	require.NoError(t, err)
+	assert.Empty(t, subject, "SMS template should have empty subject")
+	assert.Equal(t, "Hello World", content)
+}

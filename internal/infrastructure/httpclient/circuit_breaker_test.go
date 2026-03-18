@@ -3,6 +3,7 @@ package httpclient
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -235,4 +236,126 @@ func TestCircuitBreaker_SuccessResetsFailureCount(t *testing.T) {
 
 	cbImpl := cb.(*circuitBreakerClient)
 	assert.Equal(t, stateClosed, cbImpl.State(), "circuit should still be closed because success reset the counter")
+}
+
+// threadSafeMock is a concurrency-safe mock for DeliveryClient used in
+// concurrent tests. The regular mockDeliveryClient has an unprotected calls
+// counter which is fine for serial tests but races under goroutines.
+type threadSafeMock struct {
+	sendFunc func(ctx context.Context, n *entity.Notification) (*DeliveryResponse, error)
+	mu       sync.Mutex
+	calls    int
+}
+
+func (m *threadSafeMock) Send(ctx context.Context, n *entity.Notification) (*DeliveryResponse, error) {
+	m.mu.Lock()
+	m.calls++
+	m.mu.Unlock()
+	return m.sendFunc(ctx, n)
+}
+
+func TestCircuitBreaker_ConcurrentAccessSafety(t *testing.T) {
+	inner := &threadSafeMock{
+		sendFunc: func(_ context.Context, _ *entity.Notification) (*DeliveryResponse, error) {
+			return &DeliveryResponse{MessageID: "ok", Status: "accepted", Timestamp: time.Now()}, nil
+		},
+	}
+	cfg := testConfig()
+	cb := NewCircuitBreakerClient(inner, cfg)
+	ctx := context.Background()
+
+	const goroutines = 50
+	const callsPerGoroutine = 20
+
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+
+	errCh := make(chan error, goroutines*callsPerGoroutine)
+
+	for g := 0; g < goroutines; g++ {
+		go func() {
+			defer wg.Done()
+			for i := 0; i < callsPerGoroutine; i++ {
+				_, err := cb.Send(ctx, dummyNotification())
+				if err != nil {
+					errCh <- err
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	// All calls should succeed since the inner client always succeeds.
+	var errs []error
+	for err := range errCh {
+		errs = append(errs, err)
+	}
+	assert.Empty(t, errs, "expected no errors from concurrent sends with a success client")
+
+	cbImpl := cb.(*circuitBreakerClient)
+	assert.Equal(t, stateClosed, cbImpl.State(), "circuit should remain closed after concurrent successes")
+}
+
+func TestCircuitBreaker_ConcurrentAccessWithFailures(t *testing.T) {
+	// Use a client that alternates between success and failure to stress
+	// the concurrent state transitions.
+	callMu := sync.Mutex{}
+	callCount := 0
+	inner := &threadSafeMock{
+		sendFunc: func(_ context.Context, _ *entity.Notification) (*DeliveryResponse, error) {
+			callMu.Lock()
+			callCount++
+			n := callCount
+			callMu.Unlock()
+			if n%3 == 0 {
+				return nil, errors.New("transient failure")
+			}
+			return &DeliveryResponse{MessageID: "ok", Status: "accepted", Timestamp: time.Now()}, nil
+		},
+	}
+
+	cfg := CircuitBreakerConfig{
+		FailureThreshold: 100, // high threshold so we don't trip
+		SuccessThreshold: 2,
+		OpenTimeout:      50 * time.Millisecond,
+	}
+	cb := NewCircuitBreakerClient(inner, cfg)
+	ctx := context.Background()
+
+	const goroutines = 30
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+
+	for g := 0; g < goroutines; g++ {
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 10; i++ {
+				// We don't care about individual errors here, just that
+				// the circuit breaker doesn't panic under concurrent access.
+				_, _ = cb.Send(ctx, dummyNotification())
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	// The main assertion is that we reach this point without a data race or panic.
+	cbImpl := cb.(*circuitBreakerClient)
+	assert.Equal(t, stateClosed, cbImpl.State(), "circuit should remain closed with high threshold")
+}
+
+func TestCircuitBreaker_DefaultConfig(t *testing.T) {
+	cfg := DefaultCircuitBreakerConfig()
+	assert.Equal(t, 5, cfg.FailureThreshold)
+	assert.Equal(t, 3, cfg.SuccessThreshold)
+	assert.Equal(t, 30*time.Second, cfg.OpenTimeout)
+}
+
+func TestCircuitState_String(t *testing.T) {
+	assert.Equal(t, "closed", stateClosed.String())
+	assert.Equal(t, "open", stateOpen.String())
+	assert.Equal(t, "half-open", stateHalfOpen.String())
+	assert.Equal(t, "unknown", circuitState(99).String())
 }
